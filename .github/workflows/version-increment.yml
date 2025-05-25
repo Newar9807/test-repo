@@ -128,7 +128,7 @@ jobs:
           echo "=== Updated lines ==="
           grep -n "Version:\|TEST_REPO_VERSION\|const VERSION" test-repo.php
 
-      - name: Commit and push version update to main
+      - name: Update version in next branch for next development cycle
         if: steps.check_commit.outputs.skip == 'false'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
@@ -139,47 +139,61 @@ jobs:
             exit 0
           fi
           
+          # Switch to next branch and update version there
+          git fetch origin next
+          git checkout next
+          
+          # Apply the same version updates to next branch
+          sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
+          sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
+          sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
+          
           echo "=== Git status before commit ==="
           git status
           
           git add test-repo.php
-          git commit -m "Auto-increment version to $NEW_VERSION after merge"
+          git commit -m "Auto-increment version to $NEW_VERSION for next development cycle"
           
-          echo "=== Pushing to main branch ==="
-          git push origin main
+          echo "=== Pushing to next branch ==="
+          git push origin next
           
-          echo "Successfully pushed version update to main branch"
+          echo "Successfully updated next branch with version $NEW_VERSION for next development cycle"
 
-      - name: Create Git Tag
+      - name: Create Git Tag for Released Version
         if: steps.check_commit.outputs.skip == 'false'
         run: |
-          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          RELEASED_VERSION="${{ steps.current_version.outputs.version }}"
+          
+          # Switch back to main branch for tagging the released version
+          git checkout main
           
           # Check if tag already exists
-          if git tag -l "v$NEW_VERSION" | grep -q "v$NEW_VERSION"; then
-            echo "Tag v$NEW_VERSION already exists, skipping tag creation"
+          if git tag -l "v$RELEASED_VERSION" | grep -q "v$RELEASED_VERSION"; then
+            echo "Tag v$RELEASED_VERSION already exists, skipping tag creation"
           else
-            git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
-            git push origin "v$NEW_VERSION"
-            echo "Created and pushed tag v$NEW_VERSION"
+            git tag -a "v$RELEASED_VERSION" -m "Release version $RELEASED_VERSION"
+            git push origin "v$RELEASED_VERSION"
+            echo "Created and pushed tag v$RELEASED_VERSION for the released version"
           fi
 
-      - name: Create Release
+      - name: Create Release for Released Version
         if: steps.check_commit.outputs.skip == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.new_version.outputs.version }}
-          name: Release v${{ steps.new_version.outputs.version }}
+          tag_name: v${{ steps.current_version.outputs.version }}
+          name: Release v${{ steps.current_version.outputs.version }}
           body: |
-            ## Changes
-            - Auto-incremented version from ${{ steps.current_version.outputs.version }} to ${{ steps.new_version.outputs.version }}
-            - Merged changes from next branch
+            ## Release Notes
+            - Released version ${{ steps.current_version.outputs.version }}
+            - Merged changes from next branch to main
+            - Next development version ${{ steps.new_version.outputs.version }} prepared in next branch
             
             ## Version Details
-            - Previous Version: ${{ steps.current_version.outputs.version }}
-            - New Version: ${{ steps.new_version.outputs.version }}
+            - Released Version: ${{ steps.current_version.outputs.version }}
+            - Next Development Version: ${{ steps.new_version.outputs.version }}
             
-            ## Trigger
-            - Triggered by: ${{ github.event_name }}
+            ## Workflow
+            - Main branch: Contains released version ${{ steps.current_version.outputs.version }}
+            - Next branch: Updated to version ${{ steps.new_version.outputs.version }} for next development cycle
           draft: false
           prerelease: false 
