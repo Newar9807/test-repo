@@ -1,6 +1,6 @@
 {
   "name": "test-repo-plugin",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A test plugin for demonstrating automated version management",
   "main": "test-repo.php",
   "scripts": {
