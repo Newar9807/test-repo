@@ -5,20 +5,13 @@ on:
     types: [closed]
     branches:
       - main
-  push:
-    branches:
-      - main
 
 jobs:
   increment-version:
-    # Trigger on PR merge from next branch OR push to main from a merge commit
+    # Trigger only on PR merge from next branch
     if: |
-      (github.event_name == 'pull_request' && 
-       github.event.pull_request.merged == true && 
-       github.event.pull_request.head.ref == 'next') ||
-      (github.event_name == 'push' && 
-       github.ref == 'refs/heads/main' &&
-       !contains(github.event.head_commit.message, 'Auto-increment version'))
+      github.event.pull_request.merged == true && 
+      github.event.pull_request.head.ref == 'next'
     runs-on: ubuntu-latest
     
     steps:
