@@ -5,10 +5,20 @@ on:
     types: [closed]
     branches:
       - main
+  push:
+    branches:
+      - main
 
 jobs:
   increment-version:
-    if: github.event.pull_request.merged == true && github.event.pull_request.head.ref == 'next'
+    # Trigger on PR merge from next branch OR push to main from a merge commit
+    if: |
+      (github.event_name == 'pull_request' && 
+       github.event.pull_request.merged == true && 
+       github.event.pull_request.head.ref == 'next') ||
+      (github.event_name == 'push' && 
+       github.ref == 'refs/heads/main' &&
+       !contains(github.event.head_commit.message, 'Auto-increment version'))
     runs-on: ubuntu-latest
     
     steps:
@@ -23,15 +33,37 @@ jobs:
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
+      - name: Check if this is a version increment commit
+        id: check_commit
+        run: |
+          # Skip if this commit is already a version increment commit
+          COMMIT_MSG="${{ github.event.head_commit.message || github.event.pull_request.title || '' }}"
+          if [[ "$COMMIT_MSG" == *"Auto-increment version"* ]]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "This is already a version increment commit, skipping..."
+          elif [ ! -f "test-repo.php" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "test-repo.php not found, skipping..."
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+            echo "Proceeding with version increment..."
+          fi
+
       - name: Extract current version
+        if: steps.check_commit.outputs.skip == 'false'
         id: current_version
         run: |
-          # Extract version from plugin header
-          CURRENT_VERSION=$(grep -oP '(?<=Version: )\d+\.\d+\.\d+' test-repo.php)
+          # Extract version from plugin header using sed (more portable than grep -P)
+          CURRENT_VERSION=$(sed -n 's/.*Version: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' test-repo.php)
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "Error: Could not extract version from test-repo.php"
+            exit 1
+          fi
           echo "Current version: $CURRENT_VERSION"
           echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
       - name: Increment version
+        if: steps.check_commit.outputs.skip == 'false'
         id: new_version
         run: |
           CURRENT_VERSION="${{ steps.current_version.outputs.version }}"
@@ -50,73 +82,90 @@ jobs:
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
       - name: Update version in test-repo.php
+        if: steps.check_commit.outputs.skip == 'false'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
           
+          # Create backup
+          cp test-repo.php test-repo.php.backup
+          
           # Update version in plugin header
-          sed -i "s/Version: [0-9]\+\.[0-9]\+\.[0-9]\+/Version: $NEW_VERSION/" test-repo.php
+          sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
           
           # Update version in constant
-          sed -i "s/define('TEST_REPO_VERSION', '[0-9]\+\.[0-9]\+\.[0-9]\+')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
+          sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
           
           # Update version in class constant
-          sed -i "s/const VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/const VERSION = '$NEW_VERSION'/" test-repo.php
+          sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
+          
+          # Verify changes were made
+          if ! grep -q "Version: $NEW_VERSION" test-repo.php; then
+            echo "Error: Failed to update plugin header version"
+            cp test-repo.php.backup test-repo.php
+            exit 1
+          fi
+          
+          echo "Successfully updated version to $NEW_VERSION"
 
-      - name: Checkout next branch
+      - name: Check if next branch exists
+        if: steps.check_commit.outputs.skip == 'false'
+        id: check_next
+        run: |
+          if git ls-remote --heads origin next | grep -q next; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Update version in next branch
+        if: steps.check_commit.outputs.skip == 'false' && steps.check_next.outputs.exists == 'true'
         run: |
           git fetch origin next
           git checkout next
-
-      - name: Update version in next branch
-        run: |
+          
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
           
           # Update version in plugin header
-          sed -i "s/Version: [0-9]\+\.[0-9]\+\.[0-9]\+/Version: $NEW_VERSION/" test-repo.php
+          sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
           
           # Update version in constant
-          sed -i "s/define('TEST_REPO_VERSION', '[0-9]\+\.[0-9]\+\.[0-9]\+')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
+          sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
           
           # Update version in class constant
-          sed -i "s/const VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/const VERSION = '$NEW_VERSION'/" test-repo.php
-
-      - name: Commit version update to next branch
-        run: |
-          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
           
           git add test-repo.php
           git commit -m "Auto-increment version to $NEW_VERSION" || echo "No changes to commit"
           git push origin next
 
-      - name: Checkout main branch and update
+      - name: Update main branch
+        if: steps.check_commit.outputs.skip == 'false'
         run: |
           git checkout main
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
           
           # Update version in plugin header
-          sed -i "s/Version: [0-9]\+\.[0-9]\+\.[0-9]\+/Version: $NEW_VERSION/" test-repo.php
+          sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
           
           # Update version in constant
-          sed -i "s/define('TEST_REPO_VERSION', '[0-9]\+\.[0-9]\+\.[0-9]\+')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
+          sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
           
           # Update version in class constant
-          sed -i "s/const VERSION = '[0-9]\+\.[0-9]\+\.[0-9]\+'/const VERSION = '$NEW_VERSION'/" test-repo.php
-
-      - name: Commit version update to main branch
-        run: |
-          NEW_VERSION="${{ steps.new_version.outputs.version }}"
+          sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
           
           git add test-repo.php
-          git commit -m "Auto-increment version to $NEW_VERSION after merge from next" || echo "No changes to commit"
+          git commit -m "Auto-increment version to $NEW_VERSION after merge" || echo "No changes to commit"
           git push origin main
 
       - name: Create Git Tag
+        if: steps.check_commit.outputs.skip == 'false'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
           git tag -a "v$NEW_VERSION" -m "Version $NEW_VERSION"
           git push origin "v$NEW_VERSION"
 
       - name: Create Release
+        if: steps.check_commit.outputs.skip == 'false'
         uses: actions/create-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,5 +180,8 @@ jobs:
             ## Version Details
             - Previous Version: ${{ steps.current_version.outputs.version }}
             - New Version: ${{ steps.new_version.outputs.version }}
+            
+            ## Trigger
+            - Triggered by: ${{ github.event_name }}
           draft: false
           prerelease: false 
