@@ -1,0 +1,29 @@
+{
+  "name": "test-repo-plugin",
+  "version": "1.0.0",
+  "description": "A test plugin for demonstrating automated version management",
+  "main": "test-repo.php",
+  "scripts": {
+    "build": "echo 'Build script here'",
+    "test": "echo 'Test script here'",
+    "lint": "echo 'Lint script here'"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Newar9807/test-repo.git"
+  },
+  "keywords": [
+    "wordpress",
+    "plugin",
+    "test"
+  ],
+  "author": "Your Name",
+  "license": "GPL-2.0-or-later",
+  "devDependencies": {
+    "eslint": "^8.0.0",
+    "prettier": "^2.0.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+} 
