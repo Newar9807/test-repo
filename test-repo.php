@@ -208,3 +208,5 @@ function test_repo_uninstall() {
     // global $wpdb;
     // $wpdb->query("DROP TABLE IF EXISTS {$wpdb->prefix}test_repo_data");
 } 
+
+// Sample code
