@@ -3,7 +3,7 @@
  * Plugin Name: Test Repo Plugin
  * Plugin URI: https://github.com/Newar9807/test-repo
  * Description: A test plugin for demonstrating automated version management.
- * Version: 1.0.1
+ * Version: 1.0.0
  * Author: Your Name
  * Author URI: https://github.com/Newar9807
  * License: GPL v2 or later
@@ -22,7 +22,7 @@ if (!defined('ABSPATH')) {
 }
 
 // Define plugin constants
-define('TEST_REPO_VERSION', '1.0.1');
+define('TEST_REPO_VERSION', '1.0.0');
 define('TEST_REPO_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('TEST_REPO_PLUGIN_PATH', plugin_dir_path(__FILE__));
 define('TEST_REPO_PLUGIN_BASENAME', plugin_basename(__FILE__));
@@ -35,7 +35,7 @@ class TestRepoPlugin {
     /**
      * Plugin version
      */
-    const VERSION = '1.0.1';
+    const VERSION = '1.0.0';
     
     /**
      * Single instance of the plugin

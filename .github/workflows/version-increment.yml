@@ -48,23 +48,24 @@ jobs:
             echo "Proceeding with version increment..."
           fi
 
-      - name: Extract current version
+      - name: Extract current version from next branch package.json
         if: steps.check_commit.outputs.skip == 'false'
         id: current_version
         run: |
-          # Debug: Show the file content around version line
-          echo "=== Debugging version extraction ==="
-          grep -n "Version:" test-repo.php || echo "No Version: line found"
+          # Debug: Show the package.json content
+          echo "=== Debugging version extraction from package.json ==="
           
-          # Extract version from plugin header using sed (more portable than grep -P)
-          CURRENT_VERSION=$(sed -n 's/.* Version: \([0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\).*/\1/p' test-repo.php)
+          # Get version from next branch package.json (the source of truth)
+          git fetch origin next
+          CURRENT_VERSION=$(git show origin/next:package.json | grep '"version"' | sed 's/.*"version": "\([^"]*\)".*/\1/')
+          
           if [ -z "$CURRENT_VERSION" ]; then
-            echo "Error: Could not extract version from test-repo.php"
-            echo "File content around version:"
-            head -10 test-repo.php
+            echo "Error: Could not extract version from next branch package.json"
+            echo "Package.json content from next branch:"
+            git show origin/next:package.json
             exit 1
           fi
-          echo "Current version: $CURRENT_VERSION"
+          echo "Current version from next branch package.json: $CURRENT_VERSION"
           echo "version=$CURRENT_VERSION" >> $GITHUB_OUTPUT
 
       - name: Increment version
@@ -87,77 +88,65 @@ jobs:
           echo "New version: $NEW_VERSION"
           echo "version=$NEW_VERSION" >> $GITHUB_OUTPUT
 
-      - name: Update version in test-repo.php
-        if: steps.check_commit.outputs.skip == 'false'
-        run: |
-          NEW_VERSION="${{ steps.new_version.outputs.version }}"
-          
-          # Create backup
-          cp test-repo.php test-repo.php.backup
-          
-          # Update version in plugin header
-          sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
-          
-          # Update version in constant
-          sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
-          
-          # Update version in class constant
-          sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
-          
-          # Verify all changes were made
-          echo "=== Verifying version updates ==="
-          if ! grep -q "Version: $NEW_VERSION" test-repo.php; then
-            echo "Error: Failed to update plugin header version"
-            cp test-repo.php.backup test-repo.php
-            exit 1
-          fi
-          
-          if ! grep -q "define('TEST_REPO_VERSION', '$NEW_VERSION')" test-repo.php; then
-            echo "Error: Failed to update TEST_REPO_VERSION constant"
-            cp test-repo.php.backup test-repo.php
-            exit 1
-          fi
-          
-          if ! grep -q "const VERSION = '$NEW_VERSION'" test-repo.php; then
-            echo "Error: Failed to update class VERSION constant"
-            cp test-repo.php.backup test-repo.php
-            exit 1
-          fi
-          
-          echo "Successfully updated all version references to $NEW_VERSION"
-          echo "=== Updated lines ==="
-          grep -n "Version:\|TEST_REPO_VERSION\|const VERSION" test-repo.php
 
-      - name: Update version in next branch for next development cycle
+
+      - name: Update next branch with incremented version
         if: steps.check_commit.outputs.skip == 'false'
         run: |
           NEW_VERSION="${{ steps.new_version.outputs.version }}"
-          
-          # Check if there are changes to commit
-          if git diff --quiet test-repo.php; then
-            echo "No changes detected in test-repo.php"
-            exit 0
-          fi
           
           # Switch to next branch and update version there
           git fetch origin next
           git checkout next
           
-          # Apply the same version updates to next branch
+          echo "=== Updating next branch with incremented version $NEW_VERSION ==="
+          echo "Main branch remains unchanged - only next branch gets updated"
+          
+          # Update version in PHP plugin header
           sed -i "s/Version: [0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*/Version: $NEW_VERSION/" test-repo.php
+          
+          # Update version in PHP constant
           sed -i "s/define('TEST_REPO_VERSION', '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*')/define('TEST_REPO_VERSION', '$NEW_VERSION')/" test-repo.php
+          
+          # Update version in PHP class constant
           sed -i "s/const VERSION = '[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*'/const VERSION = '$NEW_VERSION'/" test-repo.php
+          
+          # Update version in package.json
+          sed -i "s/\"version\": \"[0-9][0-9]*\.[0-9][0-9]*\.[0-9][0-9]*\"/\"version\": \"$NEW_VERSION\"/" package.json
+          
+          # Verify all changes were made
+          echo "=== Verifying version updates in next branch ==="
+          if ! grep -q "Version: $NEW_VERSION" test-repo.php; then
+            echo "Error: Failed to update plugin header version in next branch"
+            exit 1
+          fi
+          
+          if ! grep -q "define('TEST_REPO_VERSION', '$NEW_VERSION')" test-repo.php; then
+            echo "Error: Failed to update TEST_REPO_VERSION constant in next branch"
+            exit 1
+          fi
+          
+          if ! grep -q "const VERSION = '$NEW_VERSION'" test-repo.php; then
+            echo "Error: Failed to update class VERSION constant in next branch"
+            exit 1
+          fi
+          
+          if ! grep -q "\"version\": \"$NEW_VERSION\"" package.json; then
+            echo "Error: Failed to update package.json version in next branch"
+            exit 1
+          fi
           
           echo "=== Git status before commit ==="
           git status
           
-          git add test-repo.php
+          git add test-repo.php package.json
           git commit -m "Auto-increment version to $NEW_VERSION for next development cycle"
           
           echo "=== Pushing to next branch ==="
           git push origin next
           
-          echo "Successfully updated next branch with version $NEW_VERSION for next development cycle"
+          echo "Successfully updated next branch with version $NEW_VERSION"
+          echo "Main branch remains unchanged"
 
       - name: Create Git Tag for Released Version
         if: steps.check_commit.outputs.skip == 'false'
