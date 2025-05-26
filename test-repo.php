@@ -15,7 +15,7 @@
  * Requires PHP: 7.4
  * Network: false
  */
-
+// sample comment
 // Prevent direct access
 if (!defined('ABSPATH')) {
     exit;
